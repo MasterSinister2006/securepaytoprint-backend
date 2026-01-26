@@ -14,7 +14,11 @@ const mammoth = require("mammoth");
 const XLSX = require("xlsx");
 
 const app = express();
-app.use(cors());
+app.use(cors({
+  origin: "*",
+  methods: ["GET", "POST"],
+  allowedHeaders: ["Content-Type"]
+}));
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "../frontend")));
 
