@@ -14,6 +14,10 @@ const XLSX = require("xlsx");
 
 const app = express();
 
+app.get("/", (req, res) => {
+  res.status(200).send("SecurePayToPrint backend is running ✅");
+});
+
 // ===================== GLOBAL STATE =====================
 global.machineEnabled = true;
 global.printerBusy = false;
