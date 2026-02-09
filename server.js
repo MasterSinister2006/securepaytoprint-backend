@@ -57,13 +57,6 @@ app.post("/create-session", upload.single("file"), async (req, res) => {
     const ext = path.extname(req.file.originalname).toLowerCase();
     const fileName = req.file.originalname;
     
-    // Parse additional data from request
-    const selectedPages = req.body.selectedPages ? JSON.parse(req.body.selectedPages) : [];
-    const pageSettings = req.body.pageSettings ? JSON.parse(req.body.pageSettings) : {};
-    const printMode = req.body.printMode || 'single';
-    const copies = parseInt(req.body.copies) || 1;
-    const totalAmount = parseInt(req.body.totalAmount) || 0;
-    
     // Verify file is valid
     const stats = fs.statSync(filePath);
     if (stats.size === 0) {
@@ -71,7 +64,7 @@ app.post("/create-session", upload.single("file"), async (req, res) => {
       return res.status(400).json({ error: "Empty file" });
     }
 
-    // Count total pages in file for validation
+    // Count total pages in file
     let totalPagesInFile = 0;
     
     if (ext === ".pdf") {
@@ -86,6 +79,9 @@ app.post("/create-session", upload.single("file"), async (req, res) => {
     } else if (ext === ".xlsx") {
       const workbook = XLSX.readFile(filePath);
       totalPagesInFile = workbook.SheetNames.length;
+    } else {
+      fs.unlinkSync(filePath);
+      return res.status(400).json({ error: "Unsupported file type" });
     }
 
     // Create session
@@ -97,11 +93,11 @@ app.post("/create-session", upload.single("file"), async (req, res) => {
       filePath,
       fileType: ext,
       totalPagesInFile,
-      selectedPages,
-      pageSettings,
-      printMode,
-      copies,
-      totalAmount,
+      selectedPages: [], // Will be set by machine
+      pageSettings: {},
+      printMode: 'single',
+      copies: 1,
+      totalAmount: 0,
       paymentStatus: "PENDING",
       printStatus: "WAITING",
       createdAt: new Date()
@@ -110,21 +106,22 @@ app.post("/create-session", upload.single("file"), async (req, res) => {
     console.log("✅ New session created:", {
       sessionId,
       fileName,
-      pages: selectedPages.length,
-      totalAmount,
-      printMode,
-      copies
+      totalPages: totalPagesInFile,
+      fileType: ext
     });
 
+    // Return page count to phone
     res.json({ 
       sessionId, 
-      pages: selectedPages.length,
-      totalPagesInFile,
-      totalAmount
+      pages: totalPagesInFile,
+      fileName
     });
     
   } catch (err) {
     console.error("❌ Error creating session:", err);
+    if (req.file && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
     res.status(500).json({ error: "Server error: " + err.message });
   }
 });
@@ -154,6 +151,50 @@ app.post("/update-session", (req, res) => {
   });
 
   res.json({ success: true, sessionId });
+});
+
+// =================================================
+// GET FILE (for frontend to access uploaded file)
+// =================================================
+app.get("/get-file/:sessionId", (req, res) => {
+  const session = global.sessions[req.params.sessionId];
+  if (!session) return res.status(404).json({ error: "Session not found" });
+  
+  if (!fs.existsSync(session.filePath)) {
+    return res.status(404).json({ error: "File not found" });
+  }
+  
+  res.sendFile(path.resolve(session.filePath));
+});
+
+// =================================================
+// GET PAGE PREVIEW (for rendering on machine)
+// =================================================
+app.get("/session/:id/page/:pageNum", async (req, res) => {
+  const session = global.sessions[req.params.id];
+  if (!session) return res.status(404).json({ error: "Session not found" });
+  
+  const pageNum = parseInt(req.params.pageNum);
+  const ext = session.fileType;
+  
+  try {
+    if (ext === '.pdf') {
+      // For PDF, we'll return the file path for the frontend to render
+      res.json({ 
+        type: 'pdf',
+        filePath: session.filePath,
+        pageNum: pageNum
+      });
+    } else if (['.jpg', '.jpeg', '.png'].includes(ext)) {
+      // For images, send the image file directly
+      res.sendFile(path.resolve(session.filePath));
+    } else {
+      res.json({ type: 'placeholder' });
+    }
+  } catch (err) {
+    console.error("Error getting page preview:", err);
+    res.status(500).json({ error: "Error generating preview" });
+  }
 });
 
 // =================================================
