@@ -325,6 +325,17 @@ app.get("/admin/sessions", (req, res) => {
   res.json(sessions);
 });
 
+app.get("/admin/stats", async (req, res) => {
+  try {
+    const orders = await db.collection("orders").find().toArray();
+    const totalOrders = orders.length;
+    const totalRevenue = orders.reduce((sum, o) => sum + (o.amount || 0), 0);
+    res.json({ totalOrders, totalRevenue, activePrinters: 1 });
+  } catch (err) {
+    res.status(500).send("Error fetching stats");
+  }
+});
+
 // =================================================
 // CANCEL SESSION (New feature)
 // =================================================
